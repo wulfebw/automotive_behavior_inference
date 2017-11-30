@@ -95,7 +95,7 @@ function build_dataset_collector(
     subexts = [
         CoreFeatureExtractor(),
         TemporalFeatureExtractor(),
-        CarLidarFeatureExtractor(extract_carlidar_rangerate = true),
+        CarLidarFeatureExtractor(2, extract_carlidar_rangerate = true),
         BehavioralFeatureExtractor()
     ]
     ext = MultiFeatureExtractor(subexts)

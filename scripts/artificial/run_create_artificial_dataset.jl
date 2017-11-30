@@ -3,8 +3,8 @@ include("create_artificial_dataset.jl")
 
 function main()
     output_filepath = "../../data/trajectories/artificial.h5"
-    num_scenarios = 10
-    num_col = 2
+    num_scenarios = 10000
+    num_col = 20
     pcol = build_parallel_dataset_collector(
         num_scenarios,
         num_col,
