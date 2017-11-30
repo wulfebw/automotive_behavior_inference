@@ -195,9 +195,9 @@ class RNNVAE(object):
 
         # summaries
         tf.summary.scalar('loss', self.loss)
-        tf.summary.scalar('data loss', self.data_loss)
-        tf.summary.scalar('kl loss', self.kl_loss)
-        tf.summary.scalar('kl weight', self.kl_weight)
+        tf.summary.scalar('data_loss', self.data_loss)
+        tf.summary.scalar('kl_loss', self.kl_loss)
+        tf.summary.scalar('kl_weight', self.kl_weight)
 
     def _build_train_op(self):
         self.var_list = tf.trainable_variables()
@@ -244,8 +244,9 @@ class RNNVAE(object):
         info['kl_loss'] += kl_loss
         info['itr'] += 1
 
-    def _report(self, info, name, epoch, n_epochs):
-        msg = '\r{} {} / {}'.format(name, epoch+1, n_epochs)
+    def _report(self, info, name, epoch, n_epochs, batch, n_batches):
+        msg = '\r{} epoch: {} / {} batch: {} / {}'.format(
+            name, epoch+1, n_epochs, batch+1, n_batches)
         keys = sorted(info.keys())
         for k in keys:
             if k != 'itr':
@@ -263,15 +264,15 @@ class RNNVAE(object):
         
         for epoch in range(n_epochs):
             train_info = collections.defaultdict(float)
-            for batch in dataset.batches():
+            for bidx, batch in enumerate(dataset.batches()):
                 self._train_batch(batch, train_info, writer)
-                self._report(train_info, 'train', epoch, n_epochs)
+                self._report(train_info, 'train', epoch, n_epochs, bidx, dataset.n_batches)
 
             if val_dataset is not None:
                 val_info = collections.defaultdict(float)
-                for batch in val_dataset.batches():
+                for bidx, batch in enumerate(val_dataset.batches()):
                     self._train_batch(batch, val_info, val_writer, train=False)
-                    self._report(val_info, 'val', epoch, n_epochs)
+                    self._report(val_info, 'val', epoch, n_epochs, bidx, val_dataset.n_batches)
 
     def reconstruct(self, obs, act, lengths):
         # setup 
