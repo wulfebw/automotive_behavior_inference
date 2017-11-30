@@ -1,13 +1,14 @@
 from setuptools import setup
 
-setup(name='python_package_template',
+setup(name='automotive_behavior_inference',
       version='0.1',
-      description='A template for python packages',
-      author='<insert name>',
-      author_email='<insert email>',
+      description='inferring automotive driving behavior',
+      author='Blake Wulfe',
+      author_email='blake.w.wulfe@gmail.com',
       license='MIT',
-      packages=['python_package_template'],
+      packages=['abi'],
       zip_safe=False,
       install_requires=[
         'numpy',
+        'tensorflow',
       ])
