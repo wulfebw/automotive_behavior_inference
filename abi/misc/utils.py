@@ -37,15 +37,45 @@ def compute_lengths(arr):
             lengths.append(len(sample))
         else:
             lengths.append(zero_idxs[0])
-    return lengths
+    return np.array(lengths)
 
-
-def normalize(x, axes):
-    mean = np.mean(x, axes)
+def normalize(x, lengths):
+    # bit complicated due to variables lengths
+    # compute mean by summing over length and dividing by length
+    # then mean over samples
+    mean = np.mean(np.sum(x, 1) / lengths.reshape(-1,1), 0)
     x = x - mean
-    std = np.std(x, axes)
+
+    # at this point the mean of each feature is 0
+    # so the variance is just E[X^2], std = sqrt of that
+    std = np.sqrt(np.mean(np.sum(x ** 2, 1) / lengths.reshape(-1,1), 0)) + 1e-8
     x = x / std
+
+    # set everything after the length of the value back to zero
+    for i, l in enumerate(lengths):
+        x[i, l:] = 0
     return dict(x=x, mean=mean, std=std)
+
+def apply_normalize(x, mean, std, lengths):
+    x = (x - mean) / std
+    for (i, l) in enumerate(lengths):
+        x[i, l:] = 0
+    return x
+
+def prepend_timeseries_zero(x):
+    return np.concatenate((np.zeros((x.shape[0], 1, x.shape[2])), x), axis=1)
+
+def load_x_feature_names(filepath, mode='artificial'):
+    f = h5py.File(filepath, 'r')
+
+    if mode == 'artificial':
+        x = f['risk/features']
+        feature_names = f['risk'].attrs['feature_names']
+    elif mode == 'ngsim':
+        x = np.concatenate([f['{}'.format(i)] for i in range(1,6+1)])
+        feature_names = f.attrs['feature_names']
+
+    return x, feature_names
 
 def load_data(
         filepath,
@@ -65,46 +95,81 @@ def load_data(
         debug_size=None,
         y_key='beh_lon_T',
         y_1_val=1.,
-        train_split=.8):
+        load_y=True,
+        train_split=.8,
+        mode='artificial',
+        min_length=0):
     
-    f = h5py.File(filepath, 'r')
-    x = f['risk/features']
+    # loading varies based on dataset type
+    x, feature_names = load_x_feature_names(filepath, mode)
     
+    # optionally keep it to a reasonable size
     if debug_size is not None:
         x = x[:debug_size]
-    # append a zero to the front of the timeseries dim of x
-    # because the model assumes this occurs
-    x = np.concatenate((np.zeros((x.shape[0],1,x.shape[2])), x), axis=1)
-    feature_names=f['risk'].attrs['feature_names']
+
+    # compute lengths of the samples before anything else b/c this is fragile
+    lengths = compute_lengths(x)
+
+    # only keep samples with length > min_length
+    valid_idxs = np.where(lengths > min_length)[0]
+    x = x[valid_idxs]
+    lengths = lengths[valid_idxs]
     
-    y_idx = np.where(feature_names == y_key)[0]
-    y = np.zeros(len(x))
-    one_idxs = np.where(x[:,-1,y_idx] == y_1_val)[0]
-    y[one_idxs] = 1
+    # y might not exist, so only laod it optionally
+    if load_y:
+        y_idx = np.where(feature_names == y_key)[0]
+        y = np.zeros(len(x))
+        one_idxs = np.where(x[:,-1,y_idx] == y_1_val)[0]
+        y[one_idxs] = 1
+    else:
+        y = None
     
+    # subselect relevant keys
     obs_idxs = [i for (i,n) in enumerate(feature_names) if n in obs_keys]
     obs = x[:,:,obs_idxs]
-    obs = normalize(obs, (0,1))['x']
     act_idxs = [i for (i,n) in enumerate(feature_names) if n in act_keys]
     act = x[:,:,act_idxs]
-    act = normalize(act, (0,1))['x']
-    
-    n_samples, max_len, obs_dim = obs.shape
-    max_len = max_len - 1 
-    act_dim = act.shape[-1]
-    lengths = np.ones(n_samples) * max_len
     
     # train val split
-    tidx = int(train_split *  n_samples)
+    tidx = int(train_split *  len(obs))
+    
+    # val
     val_obs = obs[tidx:]
     val_act = act[tidx:]
     val_lengths = lengths[tidx:]
-    val_y = y[tidx:]
+    
+    # train
     obs = obs[:tidx]
     act = act[:tidx]
     lengths = lengths[:tidx]
-    y = y[:tidx]
-    
+
+    # normalize
+    info = normalize(obs, lengths)
+    obs = info['x']
+    val_obs = apply_normalize(val_obs, info['mean'], info['std'], val_lengths)
+
+    info = normalize(act, lengths)
+    act = info['x']
+    val_act = apply_normalize(val_act, info['mean'], info['std'], val_lengths)
+
+    if load_y:
+        val_y = y[tidx:]
+        y = y[:tidx]
+    else:
+        val_y = None
+
+    # append a zero to the front of the timeseries dim for each of these
+    # because the model assumes this is the form of the input
+    obs = prepend_timeseries_zero(obs)
+    act = prepend_timeseries_zero(act)
+    val_obs = prepend_timeseries_zero(val_obs)
+    val_act = prepend_timeseries_zero(val_act)
+
+    # extract some common useful quantities
+    n_samples, max_len, obs_dim = obs.shape
+    max_len = max_len - 1 
+    act_dim = act.shape[-1]
+
     return dict(
         obs=obs,
         act=act,

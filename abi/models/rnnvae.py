@@ -23,7 +23,7 @@ class RNNVAE(object):
             kl_final=1.0,
             kl_steps=10000,
             kl_loss_min=.2,
-            learning_rate=2e-4,
+            learning_rate=5e-4,
             grad_clip=1.):
         self.max_len = max_len
         self.obs_dim = obs_dim
@@ -221,7 +221,7 @@ class RNNVAE(object):
         self.summary_op = tf.summary.merge_all()
 
     def _train_batch(self, batch, info, writer=None, train=True):
-        outputs = [self.summary_op, self.data_loss, self.kl_loss]
+        outputs = [self.global_step, self.summary_op, self.data_loss, self.kl_loss]
         if train:
             outputs += [self.train_op]
         feed = {
@@ -233,12 +233,12 @@ class RNNVAE(object):
         sess = tf.get_default_session()
         fetched = sess.run(outputs, feed_dict=feed)
         if train:
-            summary, data_loss, kl_loss, _ = fetched
+            step, summary, data_loss, kl_loss, _ = fetched
         else:
-            summary, data_loss, kl_loss = fetched
+            step, summary, data_loss, kl_loss = fetched
 
         if writer is not None:
-            writer.add_summary(summary)
+            writer.add_summary(summary, step)
 
         info['data_loss'] += data_loss
         info['kl_loss'] += kl_loss
