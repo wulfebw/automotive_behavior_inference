@@ -14,6 +14,15 @@ class Dataset(object):
 
         self.n_samples = len(obs)
         self.n_batches = compute_n_batches(self.n_samples, self.batch_size)
+
+    def sample(self, n_samples=None):
+        n_samples = self.batch_size if n_samples is None else n_samples
+        idxs = np.random.randint(0, self.n_samples, n_samples)
+        return dict(
+            obs=self.obs[idxs],
+            act=self.act[idxs],
+            lengths=self.lengths[idxs]
+        )
         
     def _shuffle(self):
         if self.shuffle:

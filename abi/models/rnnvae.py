@@ -5,6 +5,7 @@ import sys
 import tensorflow as tf
 
 import abi.core.rnn_utils as rnn_utils
+import abi.misc.tf_utils as tf_utils
 import abi.misc.utils as utils
 
 class RNNVAE(object):
@@ -17,14 +18,15 @@ class RNNVAE(object):
             batch_size,
             dropout_keep_prob=1.,
             enc_hidden_dim=64,
-            z_dim=64,
+            z_dim=32,
             dec_hidden_dim=64,
             kl_initial=0.0,
             kl_final=1.0,
             kl_steps=10000,
             kl_loss_min=.2,
             learning_rate=5e-4,
-            grad_clip=1.):
+            grad_clip=1.,
+            tile_z=True):
         self.max_len = max_len
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -39,6 +41,7 @@ class RNNVAE(object):
         self.kl_loss_min = kl_loss_min
         self.learning_rate = learning_rate
         self.grad_clip = grad_clip
+        self.tile_z = tile_z
         self._build_model()
 
     def _build_model(self):
@@ -50,8 +53,8 @@ class RNNVAE(object):
         self._build_summary_op()
 
     def _build_placeholders(self):
-        self.obs = tf.placeholder(tf.float32, (self.batch_size, self.max_len + 1, self.obs_dim), 'obs')
-        self.act = tf.placeholder(tf.float32, (self.batch_size, self.max_len + 1, self.act_dim), 'act')
+        self.obs = tf.placeholder(tf.float32, (self.batch_size, self.max_len, self.obs_dim), 'obs')
+        self.act = tf.placeholder(tf.float32, (self.batch_size, self.max_len, self.act_dim), 'act')
         self.inputs = tf.concat((self.obs, self.act), axis=-1)
         self.lengths = tf.placeholder(tf.int32, (self.batch_size,), 'lengths')
         self.sequence_mask = tf.sequence_mask(self.lengths, maxlen=self.max_len, dtype=tf.float32)
@@ -68,7 +71,7 @@ class RNNVAE(object):
         outputs, states = tf.nn.bidirectional_dynamic_rnn(
             self.enc_cell_fw,
             self.enc_cell_bw,
-            inputs=self.inputs[:,1:],
+            inputs=self.inputs,
             sequence_length=self.lengths,
             dtype=tf.float32,
             time_major=False
@@ -118,9 +121,18 @@ class RNNVAE(object):
         # in just the observation with the hope of reproducing only the action
         # this will (hopefully) cause the latent z representation to contain 
         # information about common types of action sequences
+        # we optionally tile the z value, concatenating to each timestep input
+        # the reason for this is that it reduces the burden placed on the 
+        # decoder hidden state and further encourages usage of the latent var
+        if self.tile_z:
+            tile_z = tf.reshape(self.z, (self.batch_size, 1, self.z_dim))
+            tile_z = tf.tile(tile_z, (1, self.max_len, 1))
+            dec_inputs = tf.concat((self.obs, tile_z), axis=2)
+        else:
+            dec_inputs = self.obs
         outputs, states = tf.nn.dynamic_rnn(
             self.dec_cell,
-            inputs=self.obs[:,:-1],
+            inputs=dec_inputs,
             sequence_length=self.lengths,
             initial_state=self.initial_state,
             dtype=tf.float32,
@@ -177,7 +189,7 @@ class RNNVAE(object):
         # output mean and sigma of a gaussian for the actions 
         # and compute reconstruction loss as the -log prob of true values
         dist = tf.contrib.distributions.MultivariateNormalDiag(self.act_mean, self.act_sigma)
-        data_loss = -dist.log_prob(self.act[:,1:])
+        data_loss = -dist.log_prob(self.act)
         # can't remember how many times I've messed this part up
         # at this point, the data_loss has shape (batch_size, max_len)
         # a lot of the values of this array are invalid, though, because they 
@@ -253,6 +265,14 @@ class RNNVAE(object):
                 msg += ' {}: {:.5f} '.format(k, info[k] / info['itr'])
         sys.stdout.write(msg)
 
+    def _validate(self, dataset, writer, epoch, name):
+        if writer is None:
+            return
+        batch = dataset.sample(self.batch_size * 10)
+        info = self.reconstruct(batch['obs'], batch['act'], batch['lengths'])
+        summary = tf_utils.scatter_encodings_summary(info['mean'], name)
+        writer.add_summary(summary, epoch)
+
     def train(
             self,
             dataset,
@@ -267,12 +287,14 @@ class RNNVAE(object):
             for bidx, batch in enumerate(dataset.batches()):
                 self._train_batch(batch, train_info, writer)
                 self._report(train_info, 'train', epoch, n_epochs, bidx, dataset.n_batches)
+            self._validate(dataset, writer, epoch, 'train')
 
             if val_dataset is not None:
                 val_info = collections.defaultdict(float)
                 for bidx, batch in enumerate(val_dataset.batches()):
                     self._train_batch(batch, val_info, val_writer, train=False)
                     self._report(val_info, 'val', epoch, n_epochs, bidx, val_dataset.n_batches)
+                self._validate(val_dataset, val_writer, epoch, 'val')
 
     def reconstruct(self, obs, act, lengths):
         # setup 

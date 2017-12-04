@@ -98,7 +98,8 @@ def load_data(
         load_y=True,
         train_split=.8,
         mode='artificial',
-        min_length=0):
+        min_length=0,
+        normalize_data=True):
     
     # loading varies based on dataset type
     x, feature_names = load_x_feature_names(filepath, mode)
@@ -144,13 +145,14 @@ def load_data(
     lengths = lengths[:tidx]
 
     # normalize
-    info = normalize(obs, lengths)
-    obs = info['x']
-    val_obs = apply_normalize(val_obs, info['mean'], info['std'], val_lengths)
+    if normalize_data:
+        info = normalize(obs, lengths)
+        obs = info['x']
+        val_obs = apply_normalize(val_obs, info['mean'], info['std'], val_lengths)
 
-    info = normalize(act, lengths)
-    act = info['x']
-    val_act = apply_normalize(val_act, info['mean'], info['std'], val_lengths)
+        info = normalize(act, lengths)
+        act = info['x']
+        val_act = apply_normalize(val_act, info['mean'], info['std'], val_lengths)
 
     if load_y:
         val_y = y[tidx:]
@@ -158,16 +160,8 @@ def load_data(
     else:
         val_y = None
 
-    # append a zero to the front of the timeseries dim for each of these
-    # because the model assumes this is the form of the input
-    obs = prepend_timeseries_zero(obs)
-    act = prepend_timeseries_zero(act)
-    val_obs = prepend_timeseries_zero(val_obs)
-    val_act = prepend_timeseries_zero(val_act)
-
     # extract some common useful quantities
     n_samples, max_len, obs_dim = obs.shape
-    max_len = max_len - 1 
     act_dim = act.shape[-1]
 
     return dict(

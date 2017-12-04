@@ -39,9 +39,8 @@ class TestRNNVAE(unittest.TestCase):
         # thus latent space has to be used
         n_samples = batch_size
         z = np.random.randn(n_samples, act_dim)
-        obs = np.zeros((n_samples, max_len + 1, obs_dim))
-        act = np.ones((n_samples, max_len + 1, act_dim)) * z.reshape(n_samples, 1, act_dim)
-        act[:,0] = 0
+        obs = np.zeros((n_samples, max_len, obs_dim))
+        act = np.ones((n_samples, max_len, act_dim)) * z.reshape(n_samples, 1, act_dim)
         lengths = np.array([max_len, 3])
         dataset = Dataset(obs, act, lengths, batch_size, shuffle=False)
         
@@ -76,10 +75,9 @@ class TestRNNVAE(unittest.TestCase):
         # thus latent space has to be used
         n_samples = 1000
         z = np.random.randn(n_samples, act_dim)
-        obs = np.zeros((n_samples, max_len + 1, obs_dim))
-        act = np.ones((n_samples, max_len + 1, act_dim)) * z.reshape(n_samples, 1, act_dim)
-        act[:,0] = 0
-        lengths = np.random.randint(2, max_len + 1, n_samples)
+        obs = np.zeros((n_samples, max_len, obs_dim))
+        act = np.ones((n_samples, max_len, act_dim)) * z.reshape(n_samples, 1, act_dim)
+        lengths = np.random.randint(2, max_len, n_samples)
         dataset = Dataset(obs, act, lengths, batch_size, shuffle=False)
         
         with tf.Session() as sess:
