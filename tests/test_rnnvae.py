@@ -51,6 +51,22 @@ class TestRNNVAE(unittest.TestCase):
 
         self.assertTrue(info['data_loss'] < -2)
 
+    def test_get_set_param_values(self):
+        with tf.Session() as sess:
+            model = RNNVAE(5, 2, 2, 10)
+            sess.run(tf.global_variables_initializer())
+            params = model.get_param_values()
+            init_sum = np.sum([np.sum(p) for p in params])
+            params = [p * 0 for p in params]
+            model.set_param_values(params)
+            new_params = model.get_param_values()
+            new_sum = np.sum([np.sum(p) for p in new_params])
+            orig_shapes = [np.shape(p) for p in params]
+            new_shapes = [np.shape(p) for p in new_params]
+            np.testing.assert_array_equal(orig_shapes, new_shapes)
+            self.assertNotEqual(init_sum, new_sum)
+            self.assertEqual(new_sum, 0.)
+
     @unittest.skipIf(__name__ != '__main__', 'run this test directly')
     def test_rnn_vae_plot(self):
         # build model

@@ -19,9 +19,9 @@ if __name__ == '__main__':
     act_keys = ['accel', 'turn_rate_frenet']
     data = load_data(
         filepath='../../data/trajectories/ngsim.h5',
-        debug_size=None,
+        debug_size=200,
         mode='ngsim',
-        min_length=5,
+        min_length=20,
         obs_keys=obs_keys,
         act_keys=act_keys,
         load_y=False
@@ -42,10 +42,21 @@ if __name__ == '__main__':
         np.copy(act), 
         np.copy(lengths), 
         batch_size, 
-        shuffle=True
+        shuffle=True,
+        metadata=data['metadata'],
+        meta_labels=data['meta_labels']
+    )
+    val_dataset = Dataset(
+        np.copy(val_obs), 
+        np.copy(val_act), 
+        np.copy(val_lengths), 
+        batch_size, 
+        shuffle=True,
+        metadata=data['val_metadata'],
+        meta_labels=data['meta_labels']
     )
 
-    z_dim = 2
+    z_dim = 16
     kl_final = 1.
 
     tf.reset_default_graph()
@@ -63,12 +74,17 @@ if __name__ == '__main__':
         learning_rate=1e-3
     )
     sess.run(tf.global_variables_initializer())
+    saver = tf.train.Saver(max_to_keep=2)
+    writer = tf.summary.FileWriter('../../data/summaries/ngsim/train')
+    val_writer = tf.summary.FileWriter('../../data/summaries/ngsim/val')
 
-    writer = tf.summary.FileWriter('../../data/summaries/ngsim')
     model.train(
         dataset, 
+        val_dataset=val_dataset,
         writer=writer,
+        val_writer=val_writer,
         n_epochs=1000, 
-        verbose=True
+        verbose=True,
+        saver=saver
     )
 

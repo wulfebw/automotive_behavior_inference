@@ -1,8 +1,10 @@
 
 import collections
 import numpy as np
+import os
 import sys
 import tensorflow as tf
+from tensorflow.contrib.tensorboard.plugins import projector
 
 import abi.core.rnn_utils as rnn_utils
 import abi.misc.tf_utils as tf_utils
@@ -26,7 +28,8 @@ class RNNVAE(object):
             kl_loss_min=.2,
             learning_rate=5e-4,
             grad_clip=1.,
-            tile_z=True):
+            tile_z=True,
+            n_encoding_batches=10):
         self.max_len = max_len
         self.obs_dim = obs_dim
         self.act_dim = act_dim
@@ -42,6 +45,7 @@ class RNNVAE(object):
         self.learning_rate = learning_rate
         self.grad_clip = grad_clip
         self.tile_z = tile_z
+        self.n_encoding_batches = n_encoding_batches
         self._build_model()
 
     def _build_model(self):
@@ -232,6 +236,17 @@ class RNNVAE(object):
     def _build_summary_op(self):
         self.summary_op = tf.summary.merge_all()
 
+        # embeddings variable used for visualization in tensorboard
+        n_samples = self.batch_size * self.n_encoding_batches
+        self.encoding_ph = tf.placeholder(tf.float32, (n_samples, self.z_dim), 'encodings')
+        self.encoding = tf.Variable(
+            tf.zeros((n_samples, self.z_dim), dtype=tf.float32), 
+            trainable=False, 
+            dtype=tf.float32,
+            name='encoding'
+        )
+        self.assign_encoding = tf.assign(self.encoding, self.encoding_ph)
+
     def _train_batch(self, batch, info, writer=None, train=True):
         outputs = [self.global_step, self.summary_op, self.data_loss, self.kl_loss]
         if train:
@@ -268,11 +283,35 @@ class RNNVAE(object):
     def _validate(self, dataset, writer, epoch, name):
         if writer is None:
             return
-        batch = dataset.sample(self.batch_size * 10)
+
+        batch = dataset.sample(self.batch_size * self.n_encoding_batches)
         info = self.reconstruct(batch['obs'], batch['act'], batch['lengths'])
         summary = tf_utils.scatter_encodings_summary(info['mean'], name)
         writer.add_summary(summary, epoch)
 
+        # assign encodings as well
+        # this does only one of training or validation, whichever comes last 
+        # before saving, which is validation, provided validation is performed
+        sess = tf.get_default_session()
+        sess.run(self.assign_encoding, feed_dict={self.encoding_ph: info['mean']})
+
+        # write the metadata file as well
+        logdir = writer.get_logdir()
+        filepath = os.path.join(logdir, 'metadata.tsv')
+        utils.write_metadata(filepath, batch['metadata'], batch['meta_labels'])
+        config = projector.ProjectorConfig()
+        embed = config.embeddings.add()
+        embed.tensor_name = self.encoding.name
+        embed.metadata_path = 'metadata.tsv'
+        projector.visualize_embeddings(writer, config)
+
+    def _save(self, saver, writer, epoch):
+        if saver is not None and writer is not None:
+            save_dir = writer.get_logdir()
+            sess = tf.get_default_session()
+            filepath = os.path.join(save_dir, 'chkpt_{}'.format(epoch))
+            saver.save(sess, filepath)
+            
     def train(
             self,
             dataset,
@@ -280,7 +319,8 @@ class RNNVAE(object):
             n_epochs=100, 
             writer=None, 
             val_writer=None,
-            verbose=True):
+            verbose=True,
+            saver=None):
         
         for epoch in range(n_epochs):
             train_info = collections.defaultdict(float)
@@ -295,6 +335,8 @@ class RNNVAE(object):
                     self._train_batch(batch, val_info, val_writer, train=False)
                     self._report(val_info, 'val', epoch, n_epochs, bidx, val_dataset.n_batches)
                 self._validate(val_dataset, val_writer, epoch, 'val')
+
+            self._save(saver, writer, epoch)
 
     def reconstruct(self, obs, act, lengths):
         # setup 
@@ -352,3 +394,21 @@ class RNNVAE(object):
             data_loss=data_loss,
             kl_loss=kl_loss
         )
+
+    def get_param_values(self):
+        sess = tf.get_default_session()
+        return [sess.run(v) for v in self.var_list]
+
+    def set_param_values(self, values):
+        assign = tf.group(*[tf.assign(var, val) 
+            for (var, val) in zip(self.var_list, values)])
+        sess = tf.get_default_session()
+        sess.run(assign)
+
+    def save_params(self, filepath):
+        values = self.get_param_values()
+        np.save(filepath, values)
+
+    def load_params(self, filepath):
+        values = np.load(filepath).item()
+        self.set_param_values(values)

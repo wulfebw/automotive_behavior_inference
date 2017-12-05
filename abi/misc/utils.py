@@ -1,4 +1,5 @@
 
+import csv
 import h5py
 import numpy as np
 
@@ -39,6 +40,12 @@ def compute_lengths(arr):
             lengths.append(zero_idxs[0])
     return np.array(lengths)
 
+def write_metadata(filepath, data, labels):
+    with open(filepath, 'w') as outfile:
+        writer = csv.writer(outfile, delimiter='\t')
+        writer.writerow(labels)
+        writer.writerows(data)
+
 def normalize(x, lengths):
     # bit complicated due to variables lengths
     # compute mean by summing over length and dividing by length
@@ -77,6 +84,37 @@ def load_x_feature_names(filepath, mode='artificial'):
 
     return x, feature_names
 
+def load_metadata(filepath, mode='ngsim', obs_keys=None):
+    f = h5py.File(filepath, 'r')
+    metadata, meta_labels = None, None
+
+    if mode == 'ngsim':
+        traj = []
+        for i in range(1, 6+1):
+            traj.extend([i] * len(f['{}'.format(i)]))
+
+        feature_names = f.attrs['feature_names']
+        idxs = [i for (i,n) in enumerate(feature_names) if n in obs_keys]
+        obs_keys = np.array(obs_keys)[idxs]
+        labels = obs_keys
+
+        x = np.concatenate([f['{}'.format(i)] for i in range(1,6+1)])
+        x = x[:,:,idxs]
+        lengths = compute_lengths(x)
+        feature_means = []
+        
+        for i, l in enumerate(lengths):
+            sample_features = x[i,:l]
+            feature_means.append(x[i,:l].mean(0))
+
+        n_meta = len(obs_keys) + 1
+        metadata = np.zeros((len(traj), n_meta))
+        metadata[:,0] = traj
+        metadata[:,1:] = feature_means
+        meta_labels = ['traj'] + list(obs_keys)
+
+    return metadata, meta_labels
+
 def load_data(
         filepath,
         obs_keys=[
@@ -103,10 +141,14 @@ def load_data(
     
     # loading varies based on dataset type
     x, feature_names = load_x_feature_names(filepath, mode)
+
+    # load metadata
+    metadata, meta_labels = load_metadata(filepath, mode, obs_keys)
     
     # optionally keep it to a reasonable size
     if debug_size is not None:
         x = x[:debug_size]
+        metadata = metadata[:debug_size]
 
     # compute lengths of the samples before anything else b/c this is fragile
     lengths = compute_lengths(x)
@@ -115,6 +157,7 @@ def load_data(
     valid_idxs = np.where(lengths > min_length)[0]
     x = x[valid_idxs]
     lengths = lengths[valid_idxs]
+    metadata = metadata[valid_idxs]
     
     # y might not exist, so only laod it optionally
     if load_y:
@@ -138,11 +181,13 @@ def load_data(
     val_obs = obs[tidx:]
     val_act = act[tidx:]
     val_lengths = lengths[tidx:]
+    val_metadata = metadata[tidx:]
     
     # train
     obs = obs[:tidx]
     act = act[:tidx]
     lengths = lengths[:tidx]
+    metadata = metadata[:tidx]
 
     # normalize
     if normalize_data:
@@ -177,5 +222,8 @@ def load_data(
         val_y=val_y,
         max_len=max_len,
         obs_dim=obs_dim,
-        act_dim=act_dim
+        act_dim=act_dim,
+        metadata=metadata,
+        val_metadata=val_metadata,
+        meta_labels=meta_labels
     )
