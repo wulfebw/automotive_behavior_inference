@@ -289,6 +289,10 @@ class RNNVAE(object):
         summary = tf_utils.scatter_encodings_summary(info['mean'], name)
         writer.add_summary(summary, epoch)
 
+        # encodings only for training
+        if name == 'val':
+            return 
+            
         # assign encodings as well
         # this does only one of training or validation, whichever comes last 
         # before saving, which is validation, provided validation is performed
