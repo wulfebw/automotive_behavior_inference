@@ -19,7 +19,7 @@ if __name__ == '__main__':
     act_keys = ['accel', 'turn_rate_frenet']
     data = load_data(
         filepath='../../data/trajectories/ngsim.h5',
-        debug_size=200,
+        debug_size=None,
         mode='ngsim',
         min_length=20,
         obs_keys=obs_keys,
@@ -67,11 +67,11 @@ if __name__ == '__main__':
         act_dim, 
         batch_size, 
         z_dim=z_dim, 
-        enc_hidden_dim=32,
-        dec_hidden_dim=32,
+        enc_hidden_dim=128,
+        dec_hidden_dim=128,
         kl_steps=1000,
         kl_final=kl_final,
-        learning_rate=1e-3
+        learning_rate=5e-4
     )
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=2)
