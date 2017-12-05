@@ -1,10 +1,13 @@
 
 import io
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+
+import sys
+import matplotlib
+backend = 'Agg' if sys.platform == 'linux' else 'TkAgg'
+matplotlib.use(backend)
+import matplotlib.pyplot as plt
 
 def scatter_encodings_summary(x, name):
     plt.scatter(x[:,0], x[:,1])

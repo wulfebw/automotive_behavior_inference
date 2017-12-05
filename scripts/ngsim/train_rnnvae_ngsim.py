@@ -36,7 +36,7 @@ if __name__ == '__main__':
     act_dim = data['act_dim']
     val_obs, val_act, val_lengths, val_y = data['val_obs'], data['val_act'], data['val_lengths'], data['val_y']
 
-    batch_size = 100
+    batch_size = 1000
     dataset = Dataset(
         np.copy(obs), 
         np.copy(act), 
