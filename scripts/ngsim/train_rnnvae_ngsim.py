@@ -13,7 +13,7 @@ if __name__ == '__main__':
         'angular_rate_frenet', 'timegap', 'time_to_collision',
         'is_colliding', 'out_of_lane', 'negative_velocity'
     ]
-    nbeams = 20
+    nbeams = 16
     obs_keys += ['lidar_{}'.format(i) for i in range(1, nbeams+1)]
     obs_keys += ['rangerate_lidar_{}'.format(i) for i in range(1, nbeams+1)]
     act_keys = ['accel', 'turn_rate_frenet']
@@ -24,7 +24,8 @@ if __name__ == '__main__':
         min_length=20,
         obs_keys=obs_keys,
         act_keys=act_keys,
-        load_y=False
+        load_y=False,
+        shuffle=True
     )
     obs = data['obs']
     act = data['act']
@@ -36,7 +37,7 @@ if __name__ == '__main__':
     act_dim = data['act_dim']
     val_obs, val_act, val_lengths, val_y = data['val_obs'], data['val_act'], data['val_lengths'], data['val_y']
 
-    batch_size = 1000
+    batch_size = 200
     dataset = Dataset(
         np.copy(obs), 
         np.copy(act), 
@@ -51,7 +52,7 @@ if __name__ == '__main__':
         np.copy(val_act), 
         np.copy(val_lengths), 
         batch_size, 
-        shuffle=True,
+        shuffle=False,
         metadata=data['val_metadata'],
         meta_labels=data['meta_labels']
     )
@@ -67,11 +68,12 @@ if __name__ == '__main__':
         act_dim, 
         batch_size, 
         z_dim=z_dim, 
-        enc_hidden_dim=128,
-        dec_hidden_dim=128,
-        kl_steps=1000,
+        enc_hidden_dim=256,
+        dec_hidden_dim=256,
+        kl_steps=5000,
         kl_final=kl_final,
-        learning_rate=5e-4
+        learning_rate=5e-4,
+        dropout_keep_prob=.9
     )
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(max_to_keep=2)

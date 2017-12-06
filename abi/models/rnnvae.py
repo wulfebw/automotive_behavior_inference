@@ -29,7 +29,7 @@ class RNNVAE(object):
             learning_rate=5e-4,
             grad_clip=1.,
             tile_z=True,
-            n_encoding_batches=10):
+            n_encoding_batches=2):
         self.max_len = max_len
         self.obs_dim = obs_dim
         self.act_dim = act_dim

@@ -95,8 +95,7 @@ def load_metadata(filepath, mode='ngsim', obs_keys=None):
 
         feature_names = f.attrs['feature_names']
         idxs = [i for (i,n) in enumerate(feature_names) if n in obs_keys]
-        obs_keys = np.array(obs_keys)[idxs]
-        labels = obs_keys
+        obs_keys = feature_names[idxs]
 
         x = np.concatenate([f['{}'.format(i)] for i in range(1,6+1)])
         x = x[:,:,idxs]
@@ -107,11 +106,12 @@ def load_metadata(filepath, mode='ngsim', obs_keys=None):
             sample_features = x[i,:l]
             feature_means.append(x[i,:l].mean(0))
 
-        n_meta = len(obs_keys) + 1
+        n_meta = len(obs_keys) + 2
         metadata = np.zeros((len(traj), n_meta))
         metadata[:,0] = traj
-        metadata[:,1:] = feature_means
-        meta_labels = ['traj'] + list(obs_keys)
+        metadata[:,1] = lengths
+        metadata[:,2:] = feature_means
+        meta_labels = ['traj', 'traj_length'] + list(obs_keys)
 
     return metadata, meta_labels
 
@@ -137,7 +137,8 @@ def load_data(
         train_split=.8,
         mode='artificial',
         min_length=0,
-        normalize_data=True):
+        normalize_data=True,
+        shuffle=False):
     
     # loading varies based on dataset type
     x, feature_names = load_x_feature_names(filepath, mode)
@@ -149,6 +150,11 @@ def load_data(
     if debug_size is not None:
         x = x[:debug_size]
         metadata = metadata[:debug_size]
+
+    if shuffle:
+        idxs = np.random.permutation(len(x))
+        x = x[idxs]
+        metadata = metadata[idxs]
 
     # compute lengths of the samples before anything else b/c this is fragile
     lengths = compute_lengths(x)
