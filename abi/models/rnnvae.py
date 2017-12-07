@@ -50,6 +50,7 @@ class RNNVAE(object):
 
     def _build_model(self):
         self._build_placeholders()
+        self._build_perception()
         self._build_encoder()
         self._build_decoder()
         self._build_loss()
@@ -59,15 +60,18 @@ class RNNVAE(object):
     def _build_placeholders(self):
         self.obs = tf.placeholder(tf.float32, (self.batch_size, self.max_len, self.obs_dim), 'obs')
         self.act = tf.placeholder(tf.float32, (self.batch_size, self.max_len, self.act_dim), 'act')
-        self.inputs = tf.concat((self.obs, self.act), axis=-1)
         self.lengths = tf.placeholder(tf.int32, (self.batch_size,), 'lengths')
         self.sequence_mask = tf.sequence_mask(self.lengths, maxlen=self.max_len, dtype=tf.float32)
-        self.dropout_keep_prop_ph = tf.placeholder_with_default(self.dropout_keep_prob, (), 'dropout_keep_prob')
+        self.dropout_keep_prob_ph = tf.placeholder_with_default(self.dropout_keep_prob, (), 'dropout_keep_prob')
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
 
+    def _build_perception(self):
+        self.enc_inputs = tf.concat((self.obs, self.act), axis=-1)
+        self.dec_inputs = self.obs
+
     def _build_encoder(self):
-        self.enc_cell_fw = rnn_utils._build_recurrent_cell(self.enc_hidden_dim, self.dropout_keep_prop_ph)
-        self.enc_cell_bw = rnn_utils._build_recurrent_cell(self.enc_hidden_dim, self.dropout_keep_prop_ph)
+        self.enc_cell_fw = rnn_utils._build_recurrent_cell(self.enc_hidden_dim, self.dropout_keep_prob_ph)
+        self.enc_cell_bw = rnn_utils._build_recurrent_cell(self.enc_hidden_dim, self.dropout_keep_prob_ph)
 
         # inputs is assumed to be padded at the start with a <start> token or state
         # in the case of continuous values, probably just zeros
@@ -75,7 +79,7 @@ class RNNVAE(object):
         outputs, states = tf.nn.bidirectional_dynamic_rnn(
             self.enc_cell_fw,
             self.enc_cell_bw,
-            inputs=self.inputs,
+            inputs=self.enc_inputs,
             sequence_length=self.lengths,
             dtype=tf.float32,
             time_major=False
@@ -108,35 +112,27 @@ class RNNVAE(object):
         self.z = self.z_mean + self.z_sigma * noise
 
     def _build_decoder(self):
-        self.dec_cell = rnn_utils._build_recurrent_cell(self.dec_hidden_dim, self.dropout_keep_prop_ph)
+        self.dec_cell = rnn_utils._build_recurrent_cell(self.dec_hidden_dim, self.dropout_keep_prob_ph)
 
         # the initial state of the rnn cells is a function of z as well
-        # tanh because we want the values to be zero mean centered and small
+        # tanh because we want the values to be small
         self.initial_state = tf.nn.tanh(tf.contrib.layers.fully_connected(
             self.z,
             self.dec_cell.input_size * 2,
             activation_fn=None
         ))
 
-        # again, note here how we ignore the last element when providing the 
-        # obs seq to the _decoder_. It's because the first element is a <start>
-        # token, and we want to reproduce the outputs one step ahead.
-        # also note that before we passed in (obs,act), but now we are passing 
-        # in just the observation with the hope of reproducing only the action
-        # this will (hopefully) cause the latent z representation to contain 
-        # information about common types of action sequences
         # we optionally tile the z value, concatenating to each timestep input
         # the reason for this is that it reduces the burden placed on the 
         # decoder hidden state and further encourages usage of the latent var
         if self.tile_z:
             tile_z = tf.reshape(self.z, (self.batch_size, 1, self.z_dim))
             tile_z = tf.tile(tile_z, (1, self.max_len, 1))
-            dec_inputs = tf.concat((self.obs, tile_z), axis=2)
-        else:
-            dec_inputs = self.obs
+            self.dec_inputs = tf.concat((self.dec_inputs, tile_z), axis=2)
+
         outputs, states = tf.nn.dynamic_rnn(
             self.dec_cell,
-            inputs=dec_inputs,
+            inputs=self.dec_inputs,
             sequence_length=self.lengths,
             initial_state=self.initial_state,
             dtype=tf.float32,
@@ -255,7 +251,7 @@ class RNNVAE(object):
             self.obs: batch['obs'],
             self.act: batch['act'],
             self.lengths: batch['lengths'],
-            self.dropout_keep_prop_ph: self.dropout_keep_prob if train else 1.
+            self.dropout_keep_prob_ph: self.dropout_keep_prob if train else 1.
         }
         sess = tf.get_default_session()
         fetched = sess.run(outputs, feed_dict=feed)
